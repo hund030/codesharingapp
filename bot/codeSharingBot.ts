@@ -4,6 +4,10 @@ import {
   TurnContext,
   Attachment,
 } from "botbuilder";
+import {
+  getAccessToken,
+  getSignInResponseForMessageExtension,
+} from "./helper/auth";
 import { CodeCard } from "./helper/codeCard";
 import {
   reqCodeDataFromGitHubAPI,
@@ -20,10 +24,13 @@ export class CodeSharingBot extends TeamsActivityHandler {
     // Unfurling link contains `github`.
     if (url.includes("github.com")) {
       return await handleGitHubUrl(url);
+    } else if (url.includes(".visualstudio.com")) {
+      const valueObj = context.activity.value;
+      if (!valueObj?.authentication?.token) {
+        return getSignInResponseForMessageExtension(["vso.code"]);
+      }
+      return await handleAzDOUrl(url);
     }
-    // else if (url.includes('.visualstudio.com')){
-    //   return await handleAzDOUrl(url);
-    // }
   }
 
   // Using Action as a backup.
@@ -50,10 +57,16 @@ async function createCardCommand(
   // If URL contains `github`, use GitHub API route.
   if (url.includes("github.com")) {
     return await handleGitHubUrl(url);
+  } else if (url.includes(".visualstudio.com")) {
+    const valueObj = context.activity.value;
+    if (!valueObj?.state) {
+      const res = getSignInResponseForMessageExtension(["vso.code"]);
+      return res;
+    }
+    const tokenRes = await getAccessToken(valueObj.state);
+    const token = tokenRes.access_token;
+    return await handleAzDOUrl(url, token);
   }
-  // else if (url.includes('.visualstudio.com')){
-  //   return await handleAzDOUrl(url);
-  // }
 }
 
 /**
@@ -103,9 +116,9 @@ async function handleGitHubUrl(url: string) {
  * @param url
  * @returns composeExtension for link unfurling displaying.
  */
-async function handleAzDOUrl(url: string) {
+async function handleAzDOUrl(url: string, token?: string) {
   var card: Attachment;
-  const codeCard: CodeCard = await reqCodeDataFromAzDOAPI(url);
+  const codeCard: CodeCard = await reqCodeDataFromAzDOAPI(url, token);
   if (!codeCard) {
     return;
   }
